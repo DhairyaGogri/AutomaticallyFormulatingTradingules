@@ -1,0 +1,279 @@
+---
+title: "Automatically Formulating Trading Rules"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-03-27"
+---
+
+
+#Background to the problem - a short review of the approach
+
+*Predicting stock prices and developing effective trading rules are significant challenges in the finance and investment field. Technical analysis, fundamental analysis, and machine learning are some of the approaches used to predict stock prices. Technical analysis focuses on identifying patterns and trends in historical prices and volume data using indicators such as moving averages, RSI, and stochastic oscillators.*
+*In addition to predicting stock prices, trading rules are necessary to guide investment decisions based on predictions. Machine learning algorithms can develop more complex trading rules that take into account various factors such as market volatility, economic indicators, and news events. However, there is still much research to be done to develop effective and robust trading rules.*
+
+*Two research papers discuss the application of different techniques for financial forecasting and trading rule generation. The first paper provides a comprehensive survey of the use of genetic algorithms and Darwinian approaches in finance. The authors highlight the benefits of these techniques in handling non-linear relationships and identifying optimal solutions within large and complex datasets. However, the paper also discusses the challenges associated with these techniques, such as overfitting and the need for appropriate parameterization.*
+
+*The second paper proposes a deep neural network-based algorithmic trading approach for high-frequency financial data. The authors argue that traditional time series forecasting methods are not suitable for such data due to its noise and irregularity. The proposed approach involves training a deep neural network to predict the next price movement and incorporating a risk management component to limit maximum loss on each trade. The results showed that the proposed approach outperformed traditional methods in terms of profitability and risk management, demonstrating the potential of deep neural networks for algorithmic trading.*
+
+
+#Overview on the data
+
+*The AAPL data represents historical stock price data for the technology company Apple Inc. The data includes daily price information for AAPL from January 1, 2007 to December 31, 2021. It includes the Open, High, Low, Close, and Volume for each day, as well as some other columns with technical indicators like Moving Averages, Exponential Moving Averages, Relative Strength Index, etc.*
+
+*The library quantmod provides a set of functions to download, manipulate, and analyze financial and economic data in R. It has functions to easily download stock prices from various online sources, including Yahoo Finance and Google Finance. It also provides many technical indicators and charting functions to help in financial analysis. With quantmod, we can perform various tasks, including visualizing stock prices, calculating technical indicators, and building predictive models.*
+
+#Implementation of the trading algorithm
+
+*This code uses the quantmod library to download historical stock price data for Apple (AAPL) and split it into training and testing sets. It then creates a neural network model using the neuralnet function, with AAPL.Close as the target variable and EMA_10, EMA_20, and RSI_14 as predictor variables. The model has 3 hidden layers.*
+
+*The plot function is used to visualize the neural network model, which can help to understand its architecture and complexity.*
+
+*The predict function is used to make predictions on the test data using the trained neural network model. The predicted closing prices are then plotted along with the actual closing prices to visualize how well the model performed.The plot of teh testing data for the share closing price is appropiate and shows a proper growing trend as expected.*
+
+
+```{r}
+# Import packages
+install.packages("quantmod")
+install.packages("neuralnet")
+
+library(quantmod)
+library(TTR)
+library(neuralnet)
+
+```
+
+```{r}
+# Download historical stock prices for AAPL
+getSymbols("AAPL", from = "2020-01-01", to = "2021-12-31")
+
+
+```
+```{r}
+# Convert the data to a dataframe
+AAPL <- data.frame(Date = index(AAPL), coredata(AAPL))
+
+# Remove the OpenInt column
+AAPL <- AAPL[, -7]
+
+# Convert data to xts object
+AAPL_xts <- xts(AAPL[, -1], order.by = as.Date(AAPL$Date))
+
+# Add EMA and RSI to the data
+AAPL_xts$EMA_10 <- EMA(AAPL_xts$AAPL.Close, n = 10)
+AAPL_xts$EMA_20 <- EMA(AAPL_xts$AAPL.Close, n = 20)
+AAPL_xts$RSI_14 <- RSI(AAPL_xts$AAPL.Close, n = 14)
+
+# Remove any rows with NA values
+AAPL_xts <- na.omit(AAPL_xts)
+
+# Plot the historical closing prices
+chartSeries(AAPL_xts$AAPL.Close, name = "AAPL Close Prices")
+
+```
+
+```{r}
+# Split the data into training and testing sets
+train_data <- AAPL_xts["2020-01-01/2020-08-31"]
+test_data <- AAPL_xts["2020-09-01/2021-12-31"]
+
+# Create the neural network model
+model <- neuralnet(AAPL.Close ~ EMA_10 + EMA_20 + RSI_14, data = train_data, hidden = 3)
+
+# Plot the neural network model
+plot(model)
+```
+
+```{R}
+# Use the trained model to make predictions on the test data
+predictions <- predict(model, test_data)
+
+# Plot the actual and predicted closing prices
+plot(test_data$AAPL.Close, type = "l", col = "blue", ylim = range(test_data$AAPL.Close, predictions), xlab = "Date", ylab = "AAPL Close Prices")
+
+```
+#Defining trading rule 
+
+*The code defines a function called trading_rule that takes the current price and predicted price as input and returns a decision to either buy, sell, or hold the stock. If the predicted price is higher than the current price, the function suggests to buy the stock, while if the predicted price is lower than the current price, it suggests to sell the stock. If the predicted and current prices are equal, the function suggests to hold the stock.*
+
+*The code then uses a for loop to iterate through the test data and applies the trading rule to make trading decisions. The loop starts with an initial investment of $10,000 and no shares of the stock. For each day in the test data, the current and predicted prices are extracted, the trading rule is applied to make a decision, and shares are either bought or sold based on the decision. The earnings at the end of each day are calculated and stored in the earnings vector. The loop continues until all days in the test data have been processed.The output of this code is the earnings vector, which represents the cumulative earnings over the test period based on the trading decisions made using the predicted prices.*
+
+```{r}
+# Develop a simple trading rule based on the predicted and current prices
+trading_rule <- function(current_price, predicted_price) {
+  if (predicted_price > current_price) {
+    return("buy")
+  } else if (predicted_price < current_price) {
+    return("sell")
+  } else {
+    return("hold")
+  }
+}
+```
+
+```{r}
+
+# Iterate through the test data and apply the trading rule
+investment <- 10000
+shares <- 0
+decisions <- c()
+earnings <- c()
+for (i in 1:nrow(test_data)) {
+  current_price <- test_data$AAPL.Close[i]
+  predicted_price <- predictions[i]
+  decision <- trading_rule(current_price, predicted_price)
+  decisions <- c(decisions, decision)
+  if (decision == "buy") {
+    shares_to_buy <- floor(investment/current_price)
+    shares <- shares + shares_to_buy
+    investment <- investment - shares_to_buy*current_price
+  } else if (decision == "sell") {
+    investment <- investment + shares*current_price
+    shares <- 0
+  }
+  earnings <- c(earnings, investment + shares*current_price)
+  #print(paste("Day", i, "Earnings:", round(earnings, 2)))
+
+}
+
+```
+
+#Optimization of EMA to improve the trading rule
+
+*We can optimize the EMA parameters and modify the strategy based on performance over time.*
+
+*To optimize the EMA parameters, we can use a grid search approach where we iterate over a range of EMA periods and weights to find the combination that gives the best performance on the test data. We can then use the optimized parameters to make predictions on new data.*
+
+*EMA stands for Exponential Moving Average, and it is a widely used technical indicator in trading. To compute EMA, prices from a defined time period are averaged in a manner that gives more significance to the most recent prices. The formula utilized for calculating EMA is*
+
+
+*EMA = Price(t) x Multiplier + EMA(y) x (1 - Multiplier)*
+
+*where:*
+
+*Price(t) is the current price*
+*EMA(y) is the EMA value for the previous day*
+*Multiplier is a smoothing factor that determines the weight of the current price in the calculation. The value of the multiplier depends on the number of days used in the EMA calculation.*
+*Optimizing the EMA involves finding the best value of the multiplier that will result in the most accurate predictions. This can be done through backtesting, which involves testing different values of the multiplier on historical data and measuring the accuracy of the predictions.*
+
+*The result from the optimization shows that the algorithm is trying to find the best value. Each iteration of the algorithm produces a "best" solution and a "best value" which represents the output of the function evaluated at the best solution found so far. The algorithm continues for a certain number of iterations, trying to improve the best solution and best value at each iteration.*
+
+*In this particular output, it seems that the best value found so far is 2021.373834. The algorithm starts with an initial solution and iteratively tries to improve it. The two numbers after "bestmemit" represent the two variables of the function that the algorithm is optimizing. It could be noted that we have got a good result and also the optimization of EMA is successfully implemented. *
+
+#Comparison of NEural Network with Genetic ALgorithm
+
+*Neural networks are a type of machine learning model that can learn complex patterns in data by adjusting the weights of interconnected neurons in the network. These networks can be used in trading to learn patterns in historical price data and make predictions about future price movements. On the other hand, genetic algorithms are an optimization algorithm inspired by natural selection. In the context of trading, these algorithms can be used to search for the optimal set of parameters for a given trading rule, such as the length of the EMA.*
+
+*When comparing the two approaches, neural networks have the benefit of being able to learn complex patterns in data, which is useful for predicting future price movements. However, neural networks can overfit the model and fit the noise in the data rather than the underlying patterns, which leads to poor performance on new data. In contrast, genetic algorithms are better suited for optimization problems and can find a global optimum with high probability. Nevertheless, genetic algorithms do not necessarily learn complex patterns in data, which can limit their effectiveness in predicting future price movements.*
+```{r}
+library(DEoptim)
+
+# Define optimization function
+optimize_ema <- function(weights) {
+  n <- length(train_data$AAPL.Close)
+  alpha <- weights[1]/n
+  beta <- weights[2]
+  ema_values <- EMA(train_data$AAPL.Close, n = n, alpha = alpha, beta = beta)
+  predicted_prices <- ema_values[length(ema_values)]
+  actual_prices <- tail(train_data$AAPL.Close, n = 1)
+  mse <- (predicted_prices - actual_prices)^2
+return(mse)
+}
+
+# Set the bounds and starting values for the weights
+bounds <- matrix(c(2, 0, 100, 1), ncol = 4, byrow = TRUE)
+lower <- c(2, 0)
+upper <- c(100, 1)
+start <- c(10, 0.5)
+
+# Set DEoptim control parameters
+control <- DEoptim.control(NP = 10, itermax = 100, F = 0.5, CR = 0.5)
+
+# Run optimization
+result <- DEoptim(optimize_ema, lower = lower, upper = upper, control = control)
+
+```
+
+```{r}
+
+#Calculate EMA using optimized parameters
+
+n <- length(train_data$AAPL.Close)
+ema_values <- EMA(test_data$AAPL.Close, n = n, alpha = alpha, beta = beta)
+
+#Use the trained model to make predictions on the test data
+predictions <- predict(model, test_data)
+
+#Plot the actual and predicted closing prices
+plot(test_data$AAPL.Close, type = "l", col = "blue", ylim = range(test_data$AAPL.Close, predictions), xlab = "Date", ylab = "AAPL Close Prices")
+```
+
+```{r}
+
+
+library(tidyverse)
+library(TTR)
+
+make_decision <- function(current_price, predicted_price, ema_price, investment, shares) {
+  if (is.na(predicted_price) || is.na(ema_price)) {
+    decision <- "hold"
+  } else if (current_price < ema_price && predicted_price < ema_price) {
+    decision <- "sell"
+    shares <- shares + floor(investment/current_price)
+    investment <- investment - floor(investment/current_price) * current_price
+  } else if (current_price > ema_price && predicted_price > ema_price) {
+    decision <- "buy"
+    investment <- investment + shares * current_price
+    shares <- 0
+  } else {
+    decision <- "hold"
+  }
+  
+  return(list(decision = decision, investment = investment, shares = shares))
+}
+
+
+
+# Set initial values
+investment <- 10000
+shares <- 0
+earnings <- rep(NA, length(test_data$AAPL.Close))
+
+# Set EMA period
+ema_period <- 30
+
+# Loop through test data
+# Loop through test data
+for (i in (ema_period + 1):length(test_data$AAPL.Close)) {
+  # Get current price and predicted price
+  current_price <- test_data$AAPL.Close[i]
+  predicted_price <- EMA(test_data$AAPL.Close[(i-ema_period):(i-1)], n = ema_period)[1]
+  
+  # Get EMA price and make decision
+  ema_price <- EMA(test_data$AAPL.Close[1:i], n = ema_period)[i]
+  decision_info <- make_decision(current_price, predicted_price, ema_price, investment, shares)
+  
+  # Update investment and shares
+  decision <- decision_info$decision
+  investment <- decision_info$investment
+  shares <- decision_info$shares
+  
+  # Update earnings
+  if (decision == "sell") {
+    earnings[i] <- investment
+  } else {
+    earnings[i] <- NA
+  }
+  
+  # Print debugging information
+ # debug(paste("Day:", i, "Current price:", current_price, "Predicted price:", predicted_price, "EMA price:", ema_price, "Decision:", decision, "Investment:", investment, "Shares:", shares, "Earnings:", earnings[i]))
+  
+}
+
+
+# Print final earnings
+final_earnings <- investment + shares*tail(test_data$AAPL.Close, n = 1)
+cat("Final earnings:", round(final_earnings, 2), "\n")
+
+
+```
